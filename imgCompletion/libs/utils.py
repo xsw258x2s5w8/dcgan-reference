@@ -18,6 +18,20 @@ from scipy.misc import imsave
 
 
 
+class batch_norm(object):
+    def __init__(self,epsilon=1e-5,momentum=0.9,name="batch_norm"):
+        with tf.variable_scope(name):
+            self.epsilon=epsilon
+            self.momentum=momentum
+            
+            self.name=name
+            
+    def __call__(self,x,train):
+        return tf.contrib.layers.batch_norm(x, decay=self.momentum, updates_collections=None, epsilon=self.epsilon,
+                                            center=True, scale=True, is_training=train, scope=self.name)
+
+
+
 def corrupt(x):
     """Take an input tensor and add uniform masking.
 
@@ -231,10 +245,10 @@ def deconv2d(x, n_output_h, n_output_w, n_output_ch, n_input_ch=None,
 
         h = tf.nn.bias_add(name='h', value=conv, bias=b)
 
-    return h, W
+    return h, W,b
 
 
-def lrelu(features, leak=0.2):
+def lrelu(features, leak=0.2,name="lrelu"):
     """Leaky rectifier.
 
     Parameters
@@ -249,12 +263,13 @@ def lrelu(features, leak=0.2):
     op : tf.Tensor
         Resulting output of applying leaky rectifier activation.
     """
-    f1 = 0.5 * (1 + leak)
-    f2 = 0.5 * (1 - leak)
+    with tf.variable_scope(name):
+        f1 = 0.5 * (1 + leak)
+        f2 = 0.5 * (1 - leak)
     return f1 * features + f2 * abs(features)
 
 
-def linear(x, n_output, name=None, activation=None, reuse=None):
+def linear(x, n_output, name=None, activation=None, reuse=None,with_w=False):
     """Fully connected layer.
 
     Parameters
@@ -296,8 +311,11 @@ def linear(x, n_output, name=None, activation=None, reuse=None):
 
         if activation:
             h = activation(h)
-
-        return h, W
+        
+        if with_w:
+            return h,W,b
+        else:
+            return h, W
 
 
 def flatten(x, name=None, reuse=None):
