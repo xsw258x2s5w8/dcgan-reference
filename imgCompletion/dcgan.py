@@ -333,10 +333,10 @@ def completion():
     m = 0
     v = 0    
     
-    utils.montage(np.clip((batch_images + 1) * 127.5, 0, 255).astype(np.uint8),
+    utils.montage(np.clip(batch_images, 0, 255).astype(np.uint8),
                         'complete_dir/imgs/before.png' )
     masked_images=np.multiply(batch_images,batch_mask)
-    utils.montage(np.clip((batch_images + 1) * 127.5, 0, 255).astype(np.uint8),
+    utils.montage(np.clip(masked_images, 0, 255).astype(np.uint8),
                         'complete_dir/imgs/masked.png' )
     
     
@@ -356,9 +356,9 @@ def completion():
     
     print('start complete')
     complete=gan['complete']
-    for i in range(2000):
+    for i in range(2001):
         loss,g,G_imgs=sess.run([complete['complete_loss'],complete['grad_complete_loss'],gan['G']],
-                               feed_dict={gan['z']:zhats,complete['mask']:batch_mask,gan['x']:batch_images,gan['phase_train']:False})
+                               feed_dict={gan['z']:zhats,complete['mask']:batch_mask,gan['x']:batch_images,gan['train']:False})
         
         m_prev = np.copy(m)
         v_prev = np.copy(v)
@@ -374,14 +374,17 @@ def completion():
                         'complete_dir/imgs/hats_imgs/{:04d}.png'.format(i) )
 
             inv_masked_hat_images = np.multiply(G_imgs, 1.0-batch_mask)
-            completeed = masked_images + inv_masked_hat_images
+            completeed = masked_images/255 + inv_masked_hat_images
             utils.montage(np.clip((completeed + 1) * 127.5, 0, 255).astype(np.uint8),
                         'complete_dir/imgs/completed/{:04d}.png'.format(i) )
+    sess.close()
+    
+    return G_imgs,completeed
 
     
 if __name__ == '__main__':
    #train_gan()
-    completion()    
+    a,b=completion()    
     
     
     
