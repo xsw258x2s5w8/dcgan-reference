@@ -275,6 +275,10 @@ def train_gan():
      
     sess.close()
     
+    
+def compolete():
+    return 0
+    
 if __name__ == '__main__':
    train_gan()    
     
