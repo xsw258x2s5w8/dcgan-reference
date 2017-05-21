@@ -274,6 +274,9 @@ def train_gan():
     coord.join(threads) 
      
     sess.close()
+
+def completion():
+    return 11
     
 if __name__ == '__main__':
    train_gan()    
