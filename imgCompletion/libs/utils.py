@@ -245,7 +245,7 @@ def deconv2d(x, n_output_h, n_output_w, n_output_ch, n_input_ch=None,
 
         h = tf.nn.bias_add(name='h', value=conv, bias=b)
 
-    return h, W,b
+    return h, W
 
 
 def lrelu(features, leak=0.2,name="lrelu"):
