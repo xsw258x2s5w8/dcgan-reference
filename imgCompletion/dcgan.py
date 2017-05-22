@@ -309,6 +309,7 @@ def completion():
     gan=GAN(input_shape=[None,64,64,3],n_features=64,
             n_latent=100)
 
+
     if maskType == 'center':
             scale = 0.25
             assert(scale <= 0.5)
@@ -324,7 +325,7 @@ def completion():
     imgs=[]
     for img_path in imgpaths:
         with Image.open(img_path) as img:
-            arr_img = np.asarray(img, dtype='uint8')
+            arr_img = np.asarray(img, dtype='uint8')/255
             imgs.append(arr_img)
     
     batch_images=np.asarray(imgs).astype(np.float32)
@@ -333,10 +334,10 @@ def completion():
     m = 0
     v = 0    
     
-    utils.montage(np.clip(batch_images, 0, 255).astype(np.uint8),
+    utils.montage(np.clip((batch_images + 1) * 127.5, 0, 255).astype(np.uint8),
                         'complete_dir/imgs/before.png' )
     masked_images=np.multiply(batch_images,batch_mask)
-    utils.montage(np.clip(masked_images, 0, 255).astype(np.uint8),
+    utils.montage(np.clip((masked_images+1)*127.5, 0, 255).astype(np.uint8),
                         'complete_dir/imgs/masked.png' )
     
     
@@ -356,25 +357,34 @@ def completion():
     
     print('start complete')
     complete=gan['complete']
-    for i in range(2001):
+    
+
+    for i in range(1001):
         loss,g,G_imgs=sess.run([complete['complete_loss'],complete['grad_complete_loss'],gan['G']],
                                feed_dict={gan['z']:zhats,complete['mask']:batch_mask,gan['x']:batch_images,gan['train']:False})
         
+        
+#        v_prev = np.copy(v)
+#        v = m*v - learning_rate
+#        zhats += -m * v_prev + (1+m)*v
+#        zhats = np.clip(zhats, -1, 1)
+
         m_prev = np.copy(m)
         v_prev = np.copy(v)
         m = beta1 * m_prev + (1 - beta1) * g[0]
         v = beta2 * v_prev + (1 - beta2) * np.multiply(g[0], g[0])
         m_hat = m / (1 - beta1 ** (i + 1))
         v_hat = v / (1 - beta2 ** (i + 1))
-        zhats += - np.true_divide(learning_rate * m_hat, (np.sqrt(v_hat) + eps))
+        zhats +=  -np.true_divide(learning_rate * m_hat, (np.sqrt(v_hat) + eps))
         zhats = np.clip(zhats, -1, 1)
         
-        if i % 50 == 0:
+        if i % 100 == 0:
+            print(np.mean(loss))
             utils.montage(np.clip((G_imgs + 1) * 127.5, 0, 255).astype(np.uint8),
                         'complete_dir/imgs/hats_imgs/{:04d}.png'.format(i) )
 
             inv_masked_hat_images = np.multiply(G_imgs, 1.0-batch_mask)
-            completeed = masked_images/255 + inv_masked_hat_images
+            completeed = (masked_images + inv_masked_hat_images)/2
             utils.montage(np.clip((completeed + 1) * 127.5, 0, 255).astype(np.uint8),
                         'complete_dir/imgs/completed/{:04d}.png'.format(i) )
     sess.close()
