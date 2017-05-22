@@ -3,6 +3,7 @@ import tensorflow as tf
 from libs import utils
 import numpy as np
 import os
+from PIL import Image
 
 def create_input_pipline(files,batch_size,shape,
                          n_threads=8,is_train=True):
@@ -112,7 +113,10 @@ def discriminator(x,phase_train=False,n_features=64,reuse=False):
     return tf.nn.sigmoid(h4),h4
 
     
-def GAN(input_shape,n_latent,n_features):
+def GAN(input_shape,n_latent,n_features,lam=0.1):
+    #complete the image
+    mask=tf.placeholder(tf.float32,input_shape,name='mask')
+    
     #Real input samples
     #n_features is either the image dimension
     x=tf.placeholder(tf.float32,input_shape,'x')
@@ -154,7 +158,15 @@ def GAN(input_shape,n_latent,n_features):
         sum_loss_G = tf.summary.scalar("loss_G", loss_G)
         sum_D_real = tf.summary.histogram("D_real", D_real)
         sum_D_fake = tf.summary.histogram("D_fake", D_fake)
-    
+        
+    with tf.variable_scope("complete_loss"):
+        contextual_loss=tf.reduce_sum(
+                tf.contrib.layers.flatten(
+                    tf.abs(tf.mul(mask,G)-tf.mul(mask,x))),1)
+        perceptual_loss=loss_G
+        
+        complete_loss=contextual_loss+lam*perceptual_loss
+        grad_complete_loss=tf.gradients(complete_loss,z)
     
     return {
             'loss_D':loss_D,
@@ -173,6 +185,11 @@ def GAN(input_shape,n_latent,n_features):
                 'loss_D_fake': sum_loss_D_fake,
                 'z': sum_z,
                 'x': sum_x   
+            },
+            'complete':{
+                'mask':mask,
+                'complete_loss':complete_loss,
+                'grad_complete_loss':grad_complete_loss
             }
     }
     
@@ -274,13 +291,111 @@ def train_gan():
     coord.join(threads) 
      
     sess.close()
+
+def completion():
+    batch_size=64
+    n_latent=100
+    learning_rate=0.01
+    beta1=0.9
+    beta2=0.999
+    eps=1e-8
+    maskType='center'
+    input_shape=[64,64,3]
+    
+    #sample
+    zs=np.random.uniform(-1,1,size=(batch_size,n_latent))
+    
+    #model
+    gan=GAN(input_shape=[None,64,64,3],n_features=64,
+            n_latent=100)
+
+
+    if maskType == 'center':
+            scale = 0.25
+            assert(scale <= 0.5)
+            mask = np.ones(input_shape)
+            l = int(input_shape[0]*scale)
+            u = int(input_shape[0]*(1.0-scale))
+            mask[l:u, l:u, :] = 0.0
+    
+    data_dir='data/crop_images_DB/'
+    train_imgpaths=[os.path.join(data_dir,img_i) 
+                for img_i in os.listdir(data_dir)]
+    imgpaths=train_imgpaths[0:batch_size]
+    imgs=[]
+    for img_path in imgpaths:
+        with Image.open(img_path) as img:
+            arr_img = np.asarray(img, dtype='uint8')/255
+            imgs.append(arr_img)
+    
+    batch_images=np.asarray(imgs).astype(np.float32)
+    batch_mask=np.resize(mask,[batch_size]+input_shape)
+    zhats = np.random.uniform(-1, 1, size=(batch_size,n_latent))
+    m = 0
+    v = 0    
+    
+    utils.montage(np.clip((batch_images + 1) * 127.5, 0, 255).astype(np.uint8),
+                        'complete_dir/imgs/before.png' )
+    masked_images=np.multiply(batch_images,batch_mask)
+    utils.montage(np.clip((masked_images+1)*127.5, 0, 255).astype(np.uint8),
+                        'complete_dir/imgs/masked.png' )
     
     
-def compolete():
-    return 0
+    sess=tf.Session()
+    init_op=tf.global_variables_initializer()
+    sess.run(init_op)
+    
+    saver=tf.train.Saver()
+    
+    # g = tf.get_default_graph()
+    # [print(op.name) for op in g.get_operations()]
+
+    ckpt = tf.train.get_checkpoint_state('train_dir/checkpoint')
+    if ckpt and ckpt.model_checkpoint_path:
+            saver.restore(sess, ckpt.model_checkpoint_path)
+            print("GAN model restored")
+    
+    print('start complete')
+    complete=gan['complete']
+    
+
+    for i in range(1001):
+        loss,g,G_imgs=sess.run([complete['complete_loss'],complete['grad_complete_loss'],gan['G']],
+                               feed_dict={gan['z']:zhats,complete['mask']:batch_mask,gan['x']:batch_images,gan['train']:False})
+        
+        
+#        v_prev = np.copy(v)
+#        v = m*v - learning_rate
+#        zhats += -m * v_prev + (1+m)*v
+#        zhats = np.clip(zhats, -1, 1)
+
+        m_prev = np.copy(m)
+        v_prev = np.copy(v)
+        m = beta1 * m_prev + (1 - beta1) * g[0]
+        v = beta2 * v_prev + (1 - beta2) * np.multiply(g[0], g[0])
+        m_hat = m / (1 - beta1 ** (i + 1))
+        v_hat = v / (1 - beta2 ** (i + 1))
+        zhats +=  -np.true_divide(learning_rate * m_hat, (np.sqrt(v_hat) + eps))
+        zhats = np.clip(zhats, -1, 1)
+        
+        if i % 100 == 0:
+            print(np.mean(loss))
+            utils.montage(np.clip((G_imgs + 1) * 127.5, 0, 255).astype(np.uint8),
+                        'complete_dir/imgs/hats_imgs/{:04d}.png'.format(i) )
+
+            inv_masked_hat_images = np.multiply(G_imgs, 1.0-batch_mask)
+            completeed = (masked_images + inv_masked_hat_images)/2
+            utils.montage(np.clip((completeed + 1) * 127.5, 0, 255).astype(np.uint8),
+                        'complete_dir/imgs/completed/{:04d}.png'.format(i) )
+    sess.close()
+    
+    return G_imgs,completeed
+   
+    
     
 if __name__ == '__main__':
-   train_gan()    
+   #train_gan()
+    a,b=completion()    
     
     
     

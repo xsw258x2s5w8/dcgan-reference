@@ -437,19 +437,4 @@ def montage(images, saveto='montage.png'):
                   1 + j + j * img_w:1 + j + (j + 1) * img_w] = this_img
     imsave(arr=np.squeeze(m), name=saveto)
     return m  
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
+
